@@ -1,0 +1,16 @@
+gosqa includes an ONNX export of the NISQA-s pretrained model and generated
+torchaudio frontend constants.
+
+NISQA-s: Speech Quality and Naturalness Assessment for Online Inference
+Ivan Beskrovnyi / deepvk, 2024
+https://github.com/deepvk/NISQA-s
+Upstream revision: d1d923cf6e80b1f2671223ab840fe46b96ffe919
+License: Apache License, Version 2.0 (see LICENSE)
+
+Modifications: exported the evaluation CNN, bidirectional LSTM, and pooling
+heads to ONNX; replaced adaptive pooling with equivalent overlapping max
+reductions; removed training, dropout, and packed-sequence bookkeeping for
+single-stream inference; added Go preprocessing and runtime integration.
+
+NISQA-s builds on NISQA by Gabriel Mittag, Babak Naderi, Assmaa Chehadi, and
+Sebastian Möller (Interspeech 2021), DOI: 10.21437/Interspeech.2021-299.

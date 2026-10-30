@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CGO_ENABLED: "1"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: stable
+      - uses: golangci/golangci-lint-action@db9de0fc1a667e1a49d2291a1a042dff081d78f6 # v9
+        with:
+          version: v2.15.0
+
+  test:
+    name: Test (${{ matrix.os }}, Go ${{ matrix.go }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+        go: [1.24.x, stable]
+        include:
+          - os: ubuntu-24.04
+            runtime-platform: linux-x64
+            runtime-sha256: c849e36a1ef3e22d4ff217b9d1ce4a3cf5b9467b975610913ae959ad5b16bdc9
+            runtime-library: libonnxruntime.so.1.31.1
+          - os: macos-15
+            runtime-platform: osx-arm64
+            runtime-sha256: 2e1344a1926ee50eb25b38153cb6992c3567515aef0e677a1a520a1798896d6f
+            runtime-library: libonnxruntime.1.31.1.dylib
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Install ONNX Runtime
+        shell: bash
+        env:
+          ORT_PLATFORM: ${{ matrix.runtime-platform }}
+          ORT_SHA256: ${{ matrix.runtime-sha256 }}
+          ORT_LIBRARY: ${{ matrix.runtime-library }}
+          ORT_VERSION: 1.31.1
+        run: |
+          archive="$RUNNER_TEMP/onnxruntime.tgz"
+          runtime_dir="$RUNNER_TEMP/onnxruntime"
+          curl --fail --location --retry 3 \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-${ORT_PLATFORM}-${ORT_VERSION}.tgz" \
+            --output "$archive"
+          echo "$ORT_SHA256  $archive" | shasum -a 256 --check
+          mkdir -p "$runtime_dir"
+          tar -xzf "$archive" -C "$runtime_dir" --strip-components=1
+          runtime_library="$runtime_dir/lib/$ORT_LIBRARY"
+          test -f "$runtime_library"
+          echo "ONNXRUNTIME_SHARED_LIBRARY_PATH=$runtime_library" >> "$GITHUB_ENV"
+      - name: Verify dependencies
+        run: go mod verify
+      - name: Test with race detector
+        run: go test -race -count=1 ./...
+      - name: Test CGO pointer ownership
+        env:
+          GOEXPERIMENT: cgocheck2
+        run: go test -count=1 ./...
+      - name: Build CLI
+        run: go build -o "$RUNNER_TEMP/gosqa" ./cmd/gosqa

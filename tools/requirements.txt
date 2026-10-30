@@ -1,0 +1,6 @@
+torch==2.15.0
+torchaudio==2.11.1
+numpy==2.4.6
+pandas==3.1.0
+onnx==1.23.2
+onnxruntime==1.31.1
