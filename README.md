@@ -14,7 +14,7 @@ are not clamped; they can fall outside the nominal training scale.
 
 ## Requirements
 
-- Go 1.24 or newer with `CGO_ENABLED=1` and a C compiler.
+- Go 1.27 or newer with `CGO_ENABLED=1` and a C compiler.
 - The ONNX Runtime **1.31.x CPU shared library** for the target OS/architecture.
   Tested here with 1.31.1 on macOS arm64. The pinned Go binding uses the 1.31
   C API; older runtimes are unsupported.
@@ -178,7 +178,7 @@ golangci-lint fmt ./...         # apply gofmt and goimports locally
 
 GitHub Actions runs lint, formatting checks, race tests, strict CGO pointer
 checks, dependency verification, and the CLI build on pushes and pull requests.
-Native inference tests run on Linux amd64 and macOS arm64 with both Go 1.24
+Native inference tests run on Linux amd64 and macOS arm64 with both Go 1.27
 and stable Go. CI downloads ONNX Runtime 1.31.1 from its official release and
 verifies its SHA256 before testing. No Python setup is needed.
 

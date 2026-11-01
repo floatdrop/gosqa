@@ -72,8 +72,8 @@ func TestFrontendAgainstTorchaudio(t *testing.T) {
 		}
 		closeFloats(t, "mel", f.mel, v.Mel, 0.003)
 		bins := v.Samples/hopSize + 1
-		for s := 0; s < n; s++ {
-			for m := 0; m < melBands; m++ {
+		for s := range n {
+			for m := range melBands {
 				closeFloats(t, "segment", segments[(s*melBands+m)*segmentWidth:(s*melBands+m+1)*segmentWidth], v.Mel[m*bins+s*segmentHop:m*bins+s*segmentHop+segmentWidth], 0.003)
 			}
 		}

@@ -47,7 +47,7 @@ func run() (runErr error) {
 		if n%4 != 0 {
 			return fmt.Errorf("incomplete float32 sample at end of input")
 		}
-		for i := 0; i < n/4; i++ {
+		for i := range n / 4 {
 			pcm[i] = math.Float32frombits(binary.LittleEndian.Uint32(buf[i*4:]))
 		}
 		scores, err := stream.Write(pcm[:n/4])

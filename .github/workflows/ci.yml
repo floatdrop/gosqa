@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15]
-        go: [1.24.x, stable]
+        go: [1.27.x, stable]
         include:
           - os: ubuntu-24.04
             runtime-platform: linux-x64

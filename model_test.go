@@ -4,8 +4,10 @@ import (
 	"errors"
 	"math"
 	"os"
+	"runtime"
 	"sync"
 	"testing"
+	"time"
 )
 
 func testModel(t testing.TB) *Model {
@@ -149,10 +151,8 @@ func TestConcurrentStreamsAndClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 4 {
+		wg.Go(func() {
 			a, err := m.NewAnalyzer()
 			if err != nil {
 				t.Error(err)
@@ -164,7 +164,7 @@ func TestConcurrentStreamsAndClose(t *testing.T) {
 				return
 			}
 			closeFloats(t, "concurrent", scoreValues(got), scoreValues(want), 1e-6)
-		}()
+		})
 	}
 	wg.Wait()
 	s, _ := m.NewStream(0)
@@ -233,12 +233,58 @@ func TestInferenceChunkLimits(t *testing.T) {
 	}
 }
 
-func TestCloseDuringInference(t *testing.T) {
+func TestCloseWaitsForReaders(t *testing.T) {
+	var m Model
+	// Analyze holds this read lock through preprocessing, inference, and tensor
+	// cleanup. Hold it explicitly so this check is independent of native runtime
+	// availability and inference speed.
+	m.mu.RLock()
+	release := sync.OnceFunc(m.mu.RUnlock)
+	t.Cleanup(release)
+	done := make(chan error, 1)
+	go func() { done <- m.Close() }()
+
+	// A pending writer blocks new readers. Wait until Close reaches its lock
+	// rather than assuming a goroutine has started after an arbitrary sleep.
+	timeout := time.NewTimer(5 * time.Second)
+	defer timeout.Stop()
+	for {
+		select {
+		case err := <-done:
+			t.Fatalf("Close returned while a reader was active: %v", err)
+		case <-timeout.C:
+			t.Fatal("Close did not reach the model lock")
+		default:
+		}
+		if !m.mu.TryRLock() {
+			break
+		}
+		m.mu.RUnlock()
+		runtime.Gosched()
+	}
+
+	select {
+	case err := <-done:
+		t.Fatalf("Close returned while a reader was active: %v", err)
+	default:
+	}
+	release()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-timeout.C:
+		t.Fatal("Close did not return after the reader finished")
+	}
+}
+
+func TestCloseRacesWithInference(t *testing.T) {
 	m := testModel(t)
 	pcm := testSignal(MaxFrameSamples, 0)
 	start := make(chan struct{})
 	done := make(chan error, 4)
-	for i := 0; i < cap(done); i++ {
+	for range cap(done) {
 		a, err := m.NewAnalyzer()
 		if err != nil {
 			t.Fatal(err)
@@ -253,7 +299,7 @@ func TestCloseDuringInference(t *testing.T) {
 	if err := m.Close(); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < cap(done); i++ {
+	for range cap(done) {
 		if err := <-done; err != nil && !errors.Is(err, ErrClosed) {
 			t.Fatal(err)
 		}

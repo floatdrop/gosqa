@@ -75,7 +75,7 @@ func (f *frontend) extract(pcm []float32) ([]float32, int) {
 	bins := len(pcm)/hopSize + 1
 	f.mel = resize(f.mel, bins*melBands)
 	peak := float32(-math.MaxFloat32)
-	for t := 0; t < bins; t++ {
+	for t := range bins {
 		for j := range f.input {
 			i := t*hopSize + j - fftSize/2
 			if i < 0 {
@@ -105,8 +105,8 @@ func (f *frontend) extract(pcm []float32) ([]float32, int) {
 	}
 	count := (bins-segmentWidth)/segmentHop + 1
 	f.segments = resize(f.segments, count*melBands*segmentWidth)
-	for s := 0; s < count; s++ {
-		for m := 0; m < melBands; m++ {
+	for s := range count {
+		for m := range melBands {
 			copy(f.segments[(s*melBands+m)*segmentWidth:], f.mel[m*bins+s*segmentHop:m*bins+s*segmentHop+segmentWidth])
 		}
 	}
