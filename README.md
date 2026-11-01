@@ -6,7 +6,7 @@ Speech quality analysis in Go using the pretrained
 [deepvk/NISQA-s](https://github.com/deepvk/NISQA-s) model. Inference runs inside
 your Go process with ONNX Runtime. No Python process, network request, or model
 download is needed at runtime. The exported model (2.6 MB) is embedded in the
-binary.
+binary. The library accepts PCM independently of the audio codec or transport.
 
 Returns five raw quality ratings: MOS, noisiness, discontinuity, coloration,
 and loudness. Higher means better quality for every dimension. Predictions
@@ -19,13 +19,13 @@ are not clamped; they can fall outside the nominal training scale.
   Tested here with 1.31.1 on macOS arm64. The pinned Go binding uses the 1.31
   C API; older runtimes are unsupported.
 - **Mono float32 PCM, 48 kHz, normalized to [-1, 1].** Decode compressed audio,
-  downmix, and resample before scoring. This package does not decode Opus.
+  downmix, and resample before scoring. Audio decoding is handled by the caller.
 
 Obtain the runtime from the
 [official ONNX Runtime releases](https://github.com/microsoft/onnxruntime/releases).
 Pass the full path to the actual `.so`, `.dylib`, or `.dll` through
 `Options.RuntimeLibrary` or `ONNXRUNTIME_SHARED_LIBRARY_PATH`. Ship that library
-beside the relay binary or in its container image; this is a CGO application,
+beside your application binary or in its container image; this is a CGO application,
 so a scratch image containing only the Go binary is insufficient.
 
 ## Streaming use
@@ -86,17 +86,17 @@ consumes any data; if native inference fails after completed frames, `Write`
 returns their scores with the error. Reset before continuing after such an
 error.
 
-## Beside the MoQ relay
+## Audio pipeline integration
 
-The relay's audio catalog uses mono 48 kHz Opus. The intended integration is:
+For live audio, a typical pipeline is:
 
 ```text
-MoQ audio objects → Opus decoder → bounded PCM queue → gosqa stream → metrics
+Audio source → decode / downmix / resample → bounded PCM queue → gosqa stream → metrics
 ```
 
-Create one stream and Opus decoder per publisher audio track. Share the model
-across worker goroutines. `Write` performs inference synchronously; run it in
-an analysis worker so the relay's forwarding path can keep sending packets.
+Create one stream per audio source. Share the model across worker goroutines.
+`Write` performs inference synchronously; run it in an analysis worker when
+audio capture or playback must continue independently of scoring.
 Choose the number of workers from measured CPU use; the runtime defaults to
 one inference thread per call.
 
@@ -105,11 +105,10 @@ loss concealment or silence insertion before analysis. Scoring only surviving
 packets hides discontinuities. On queue overflow or track discontinuity, reset
 the analysis state and report the gap; do not silently concatenate audio from
 both sides of a gap. The metric describes the decoded signal at the observation
-point. Publisher-side analysis does not include downstream receiver losses.
+point. Analysis before transmission does not include downstream receiver losses.
 
-The library and CLI live in this repository. Relay hooks, Opus decoding, and
-Prometheus wiring are consumer integration work; the relay checkout is not
-modified by this library.
+The library and CLI live in this repository. Audio capture, decoding, transport,
+and metrics collection are handled by the consuming application.
 
 ## File scoring
 
@@ -157,7 +156,7 @@ The original upstream `gt.wav` and `noisy.wav` samples were also checked through
 the Go CLI against PyTorch: all ten two-second frames agreed within `0.000003`
 per score. On an Apple M3 Pro with one ONNX thread, a two-second chunk took
 approximately **18 ms** including **3.2 ms** of Go preprocessing (Go 1.27.3,
-ONNX Runtime 1.31.1). This measures one stream; size a relay worker pool using
+ONNX Runtime 1.31.1). This measures one stream; size your worker pool using
 benchmarks on its target hardware and concurrent workload.
 
 ```sh
