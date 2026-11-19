@@ -209,14 +209,34 @@ func TestZeroValues(t *testing.T) {
 
 func BenchmarkAnalyze(b *testing.B) {
 	m := testModel(b)
-	a, _ := m.NewAnalyzer()
-	pcm := testSignal(DefaultFrameSamples, 0)
-	b.ReportAllocs()
-	b.SetBytes(int64(len(pcm) * 4))
-	for b.Loop() {
-		if _, err := a.Analyze(pcm); err != nil {
-			b.Fatal(err)
-		}
+	for _, samples := range []int{MinFrameSamples, SampleRate / 2, SampleRate, DefaultFrameSamples, MaxFrameSamples} {
+		audioDuration := time.Duration(samples) * time.Second / SampleRate
+		b.Run(audioDuration.String(), func(b *testing.B) {
+			a, err := m.NewAnalyzer()
+			if err != nil {
+				b.Fatal(err)
+			}
+			pcm := testSignal(samples, 0)
+			// Warm up frontend buffers and native inference before measuring.
+			if _, err := a.Analyze(pcm); err != nil {
+				b.Fatalf("warm up analyzer: %v", err)
+			}
+
+			b.ReportAllocs()
+			b.SetBytes(int64(len(pcm) * 4))
+			cpuStart, supported := processCPUTime(b)
+			for b.Loop() {
+				if _, err := a.Analyze(pcm); err != nil {
+					b.Fatal(err)
+				}
+			}
+			if supported {
+				cpuEnd, _ := processCPUTime(b)
+				cpuNsPerFrame := float64(cpuEnd-cpuStart) / float64(b.N)
+				b.ReportMetric(cpuNsPerFrame/float64(time.Millisecond), "cpu-ms/frame")
+				b.ReportMetric(100*cpuNsPerFrame/float64(audioDuration), "core-%")
+			}
+		})
 	}
 }
 

@@ -154,17 +154,39 @@ validation, not a new calibration against human speech-quality judgments.
 
 The original upstream `gt.wav` and `noisy.wav` samples were also checked through
 the Go CLI against PyTorch: all ten two-second frames agreed within `0.000003`
-per score. On an Apple M3 Pro with one ONNX thread, a two-second chunk took
-approximately **18 ms** including **3.2 ms** of Go preprocessing (Go 1.27.3,
-ONNX Runtime 1.31.1). This measures one stream; size your worker pool using
-benchmarks on its target hardware and concurrent workload.
+per score.
 
 ```sh
 go test ./...                  # frontend checks; inference checks skip without runtime
 ONNXRUNTIME_SHARED_LIBRARY_PATH=/path/to/runtime go test -race ./...
-ONNXRUNTIME_SHARED_LIBRARY_PATH=/path/to/runtime go test -run '^$' -bench . -benchmem
 go vet ./...
 ```
+
+## Per-frame CPU benchmark
+
+```sh
+ONNXRUNTIME_SHARED_LIBRARY_PATH=/path/to/libonnxruntime.so.1.31.1 \
+  go test -run '^$' -bench '^Benchmark(Analyze|Frontend)$' -benchmem -benchtime=2s
+```
+
+`BenchmarkAnalyze` scores one already-decoded PCM frame per iteration using
+one ONNX inference thread. It covers 140 ms, 500 ms, 1 s, 2 s (default), and
+10 s frames. Model setup and warm-up are excluded; recurrent state carries
+across frames. `BenchmarkFrontend` measures just Go preprocessing of a 2 s
+frame and does not require ONNX Runtime.
+
+- `ns/op`: elapsed nanoseconds per frame, including preprocessing and
+  inference in `BenchmarkAnalyze`.
+- `cpu-ms/frame`: process user + system CPU milliseconds per frame, including
+  native ONNX work. Only available on Linux and macOS.
+- `core-%`: `100 × CPU time per frame / audio duration per frame`, an estimate
+  of the share of one CPU core needed to keep up with one real-time stream.
+  For example, 20 ms of CPU per 2 s frame is 1% of one core.
+
+The CPU counters include any other work in the benchmark process. Run without
+race instrumentation on idle target hardware for a baseline, then measure
+under realistic concurrency before sizing a worker pool. Audio decoding,
+packet buffering, and delivery are not included.
 
 ## Lint and CI
 
